@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>Solstice i2c Bus Reverse Tool</title>
+<script type="text/javascript" src="solstice.js"></script>
+</head>
+
+<body>
+  <form name="mainForm">
+  	<div>
+<label for="cheese">Solstice i2c Bus Reverse Tool</label>	
+  	</div>
+ 	<div>
+<label for="cheese">v1.0</label>	
+  	</div>
+ 	<div>
+<label for="cheese">by NXElec Co., Ltd.</label> 		
+  	</div>  	  	
+<div>
+<label for="cheese">i2c Slave Address</label>	  
+  	<input name="address" value="0x0F">
+</div>
+  <div>
+ <label for="cheese">Remove redundant transactions</label>	  
+  	<input type="checkbox" name="Redundant">
+</div>
+ 
+<div>
+   
+ <label for="cheese">Include Register Filters</label>	  
+  	<input type="checkbox" name="Include">
+
+  	<input name="IncludeAddr" value="0x0F">
+
+ <label for="cheese">Exclude Register Filters</label>	  
+  	<input type="checkbox" name="Exclude">
+  
+  	<input name="ExcludeAddr" value="0x0F">
+
+</div>
+    <div>
+      <input id="fileInput" type="file" name="transactions" >
+      total size: <span id="fileSize">0</span>
+
+  </form>
+
+  <script>
+function prepareData() {
+    let file = this.files[0];
+
+    if (file==null)
+        return;
+
+    let reader = new FileReader();
+    reader.readAsText(file);
+
+    reader.onload = function() {
+        var rawData = [[]];
+        var allRows = reader.result.split(/\r?\n|\r/);
+        for (var singleRow = 0; singleRow < allRows.length; singleRow++) {
+            var rowCells = allRows[singleRow].split(',');
+            if (rowCells != null) {
+                rawData.push(rowCells);
+            }
+        }
+
+        if (rawData != null) {
+        	   processData(rawData);
+        }
+    };
+
+    reader.onerror = function() {
+       console.log(reader.error);
+    };    
+}
+
+  document.getElementById("fileInput").addEventListener("change", prepareData, false);
+  </script>
+</body>
+</html>
+
