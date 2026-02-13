@@ -11,3 +11,6 @@ C语言，8/16/任意字节寄存器读写
 
 浏览器支持：
 FF/CHROME/EDGE测试通过，ie测试有问题
+
+访问地址：
+https://jt365.github.io/solstice/solstice.html
