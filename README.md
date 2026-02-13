@@ -1,5 +1,5 @@
-# Solstice i2c Bus Reverse Tool
-分析i2c/spi总线会话并反向生成上层协议
+# Solstice i2c Bus Reverse Engineering Tool
+分析i2c/spi总线会话并反向生成上层协议，可将 CSV 格式的 I2C 事务转换为 C 语言格式的寄存器读/写调用。
 
 输入文件格式：
 USBEE
