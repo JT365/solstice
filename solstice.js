@@ -26,138 +26,74 @@ function processData(rawData) {
 }	
 
 function retrieveTransaction(rawData) {
-//    var arrTransaction = [{"timestamp":"0", "command":"R/W", "address":"0x8700", "data":[]}];
- var arrTransaction = [[]];
- 
-    for (var i=0; i<rawData.length; i++) {
-    	// Dropoff any abnormal bits
-    	if (rawData[i] == null || rawData[i].length < 4) {
-    	    	console.log("retrieveTransaction() find an invalid record in raw data - %d", i);
-    		continue;
-    	}
+    const transactions = [];
 
-         // Transaction should start with a Start bit
-	if (rawData[i][3].indexOf(startToken) === -1) {
-    	    	console.log("Not a Start bit, retrieveTransaction() dropoff a record in raw data - %d", i);
-		continue;
-	}
-	// Increase to next bits	
-	if (++i >= rawData.length) {
-		return arrTransaction;
-	}
-    	// Dropoff any abnormal bits
-    	if (rawData[i] == null || rawData[i].length < 4) {
-    	    	console.log("retrieveTransaction() find an invalid record in raw data - %d", i);
-    		continue;
-    	} 
+    for (let i = 0; i < rawData.length; i++) {
+        const row = rawData[i];
 
-        // And then come with a slave address
-        if (rawData[i][3] !== slaveWriteToken) {
-    	    console.log("Not a slave address, retrieveTransaction() dropoff a record in raw data - %d", i);
-            continue;	
+        // 1. 寻找起始位 (Start Bit)
+        if (!row || row.length < 4 || !row[3].includes(startToken)) {
+            continue;
         }
 
-        let temp = new Array();
- 
-        // Record all bit stream to a new arrary before meet a Stop bit
-        temp.push(rawData[i]);  
- 
-        while (++i < rawData.length) {
+        // 2. 检查紧随其后的从机地址位 (Slave Write)
+        const nextRow = rawData[i + 1];
+        if (!nextRow || nextRow.length < 4 || nextRow[3] !== slaveWriteToken) {
+            console.warn(`Invalid sequence at ${i}: Start not followed by SlaveWrite`);
+            continue;
+        }
 
-	    if (rawData[i] == null || rawData[i].length < 4) {
-    	    	console.log("retrieveTransaction() find an invalid record in raw data - %d", i);
-	    	continue;
-    	    }      	
-  
-            if (rawData[i][3].indexOf(stopToken) !== -1 ) {
-                break;
+        // 3. 收集直到停止位 (Stop Bit) 之前的所有数据
+        const transactionRows = [];
+        let j = i + 1; // 从 Slave 地址位开始收集
+        
+        while (j < rawData.length) {
+            const currentRow = rawData[j];
+            if (currentRow && currentRow.length >= 4) {
+                transactionRows.push(currentRow);
+                // 遇到停止位，结束当前事务收集
+                if (currentRow[3].includes(stopToken)) break;
             }
-
-            temp.push(rawData[i]);  
-        }  
-
-        // Reverse this new array in a 'readable' convension      
-        var result = reverseTransaction(temp);
-        if (result != null) {
-            arrTransaction.push(result);
+            j++;
         }
 
+        // 4. 解析收集到的数据块
+        if (transactionRows.length > 0) {
+            const result = reverseTransaction(transactionRows);
+            if (result) transactions.push(result);
+        }
+
+        // 将主循环索引跳到已处理事务的末尾
+        i = j;
     }
 
-    return (arrTransaction);
+    return transactions;
 }
 
 function reverseTransaction(transData) {
-    let temp = new Array();
-    let temp1,temp2;
- 
-    	    temp1 = retrieveAddress(transData);
-    	    if (temp1 != null) {
-    	        temp2 = retrieveRW(transData);
- 
-    	        // Retrieve read data
-   	        if (temp2 != null) {
-   	            	// Record timestamp
-    		        temp.push(transData[0][0]);
+    const timestamp = transData[0][0];
+    const addr = retrieveAddress(transData);
 
-     		        // Record command type
-    		        temp.push("R");
+    // 1. 无效地址处理：提前返回
+    if (addr == null) {
+        return [timestamp, "I", "", transData];
+    }
 
-    		        // Record register address
-     		        temp.push(temp1);
+    // 2. 尝试读取 Read 数据
+    let data = retrieveRW(transData);
+    if (data != null) {
+        return [timestamp, "R", addr, data];
+    }
 
-    		        // Record data stream
-    		        temp.push(temp2);
-    	         }
-    	         // Retrieve write data
-    	         else {
-    	             temp2 = retrieveData(transData, 6); 
-    	             if (temp2 != null && temp2.length>0) {
-  	            	// Record timestamp
-    		        temp.push(transData[0][0]);
+    // 3. 尝试读取 Write 数据
+    data = retrieveData(transData, 6);
+    if (data != null && data.length > 0) {
+        return [timestamp, "W", addr, data];
+    }
 
-     		        // Record command type
-    		        temp.push("W");
-
-    		        // Record register address
-     		        temp.push(temp1);
-     		        
-    		        // Record data stream
-    		        temp.push(temp2);
-    	             }  
-    	             else {
-
-    	    	        console.log("retrieveData() find an invalid write cycle!");
- 
- 	            	// Record timestamp
-    		        temp.push(transData[0][0]);
-
-     		        // Record command type
-    		        temp.push("I");
-
-    		        // Record register address
-     		        temp.push("temp1");
-     		        
-                  	temp.push(transData);
-             	
-    	             }	
-    	         }
-    	    }
-    	    else {
-
- 	            	// Record timestamp
-    		        temp.push(transData[0][0]);
-
-     		        // Record command type
-    		        temp.push("I");
-
-    		        // Record register address
-     		        temp.push("");    		        
-
-                  	temp.push(transData);
-    	    }
-
-    return (temp);
+    // 4. 兜底逻辑：无效写入事务
+    console.warn("retrieveData() found an invalid write cycle!");
+    return [timestamp, "I", addr, transData];
 }
 
 // Do arrary comparing
@@ -188,76 +124,60 @@ function download(filename, text) {
 
 // Produce pseudo codes to a disk file     
 function writePseudo(entry) {
-	var last;
-	var res="";
-	var resText;
-	var resCode;
-	
-    for (var i = 1; i < entry.length; i++)  {
-    	if (entry[i].length < 4)
-    	continue;
-    	
-    	if (entry[i][1]==="I") {
-    	    console.log("Invalid/Partial transaction found!");
-             resText = retToken;
+    let last = null;
+    let res = [];
+    const NL = retToken; // 换行符
 
-             for (var k=0; k<entry[i][3].length; k++) {
-             	resText = resText+"// "+entry[i][3][k]+retToken;
-             }
+    for (let i = 1; i < entry.length; i++) {
+        const row = entry[i];
+        if (row.length < 4) continue;
 
-             console.log("%s", resText);
-             res = res+resText;
-             last = null;		
-    	}
-         else {
-             if (last != null) {
-             	if (last[1]===entry[i][1] && last[2]===entry[i][2] && compareArray(last[3],entry[i][3])) {
-             		if (entry[i][1]==="R")
-             		    continue;
-             	}
+        const [time, type, addr, data] = row;
+
+        // 1. 处理无效/部分事务
+        if (type === "I") {
+            console.log("Invalid/Partial transaction found!");
+            res.push(NL, ...data.map(d => `// ${d}${NL}`));
+            last = null;
+            continue;
+        }
+
+        // 2. 重复性过滤 (仅针对 Read 类型)
+        if (last && type === "R" && last[1] === type && last[2] === addr && compareArray(last[3], data)) {
+            continue;
+        }
+
+        // 3. 生成注释行 (S-R-0xXX: 0xXX, 0xXX...)
+        const dataHex = data.map(d => ` 0x${d}`).join(',');
+        res.push(`${NL}// ${time}S-${type}-0x${addr}:${dataHex},${NL}`);
+
+        // 4. 生成伪代码
+        let code = "";
+        const len = data.length;
+
+        if (type === "R") {
+            const func = { 1: "readByte", 2: "readWord" }[len] || "readArray";
+            const params = len > 2 ? `0x${addr}, ${len}` : `0x${addr}`;
+            code = `dataArray=${func}(${params});`;
+        } else {
+            // Write 类型处理
+            if (len === 1) {
+                code = `writeByte(0x${addr}, 0x${data[0]});`;
+            } else if (len === 2) {
+                code = `writeWord(0x${addr}, 0x${data[1]}${data[0]});`;
+            } else if (len === 4) {
+                const hexVal = [...data].reverse().join(''); // 小端序拼接
+                code = `writeLong(0x${addr}, 0x${hexVal});`;
+            } else {
+                code = `BYTE dataArray[]={${dataHex}};${NL}writeArray(0x${addr}, dataArray, ${len});`;
             }
+        }
 
-             resText = retToken+"// "+entry[i][0]+"S-"+entry[i][1]+"-0x"+entry[i][2]+":";
-             for (var k=0; k<entry[i][3].length; k++) {
-             	resText = resText+" 0x"+entry[i][3][k]+",";
-            }
-            resText = resText+retToken;
-//             console.log("%s", resText);
-            res = res+resText;
- 
-            resCode = "";
-            if (entry[i][1]==="R") {
-              	if (entry[i][3].length===1)
-              	    resCode = "dataArray=readByte(0x"+entry[i][2]+");"+retToken;
-              	else if (entry[i][3].length===2)
-              	    resCode = "dataArray=readWord(0x"+entry[i][2]+");"+retToken;
-              	else 
-                    resCode = "dataArray=readArray(0x"+entry[i][2]+", "+entry[i][3].length+");"+retToken;
-            } 
-            else {
-             	if (entry[i][3].length===1)
-              	    resCode = "writeByte(0x"+entry[i][2]+", 0x"+entry[i][3][0]+");"+retToken;
-              	else if (entry[i][3].length===2)
-              	    resCode = "writeWord(0x"+entry[i][2]+", 0x"+entry[i][3][1]+entry[i][3][0]+");"+retToken;
-               	else if (entry[i][3].length===4)
-              	    resCode = "writeLong(0x"+entry[i][2]+", 0x"+entry[i][3][3]+entry[i][3][2]+entry[i][3][1]+entry[i][3][0]+");"+retToken;
-              	else {
-            	    resCode = "BYTE dataArray[]={";
-                    for (var k=0; k<entry[i][3].length; k++) {
-             	        resCode = resCode+" 0x"+entry[i][3][k]+",";
-                    }           
-                    resCode = resCode + "};"+retToken; 	
-            	    resCode = resCode+"writeArray(0x"+entry[i][2]+", dataArray, "+entry[i][3].length+");"+retToken;
-                }
-            }
-
-//             console.log("%s", resCode); 
-             res = res+resCode;           
-             last = entry[i];
-         }
+        res.push(code + NL);
+        last = row;
     }
-    
-    return res;
+
+    return res.join("");
 }
 
 function retrieveAddress(entry) {
@@ -280,25 +200,21 @@ function retrieveAddress(entry) {
 
 function retrieveRW(entry) {
 
-    for (var i=6; i<entry.length; i++) {
+    //
+    for (let i = 6; i < entry.length - 1; i++) {
+        
+        // 1. 检查是否包含 Start Token
+        const isStart = entry[i][3].includes(startToken);
+        // 2. 检查紧随其后的是否是 Slave Read Token
+        const isSlaveRead = entry[i + 1][3] === slaveReadToken;
 
-         // Transaction should start with a Start bit
-	if (entry[i][3].indexOf(startToken) === -1) {
-		continue;
-	}
-
-         if (++i >= entry.length)
-             break;
-             	
-        // And then come with a slave address
-        if (entry[i] [3] !== slaveReadToken) {
-            continue;	
+        if (isStart && isSlaveRead) {
+            // 找到匹配对，从 i+3 开始提取
+            return retrieveData(entry, i + 3);
         }
-        
-        // Record all bits to a new arrary before meet a Stop bit
-        return (retrieveData(entry, i+2));
-        
-    }     
+    }
+    //
+    return [];
 
 }
 
@@ -320,3 +236,5 @@ function retrieveData(entry, ind) {
 
     return (temp);
 }
+
+
